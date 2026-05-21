@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>付箋アプリ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #e8e0d0;
+      background-image:
+        linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+      background-size: 30px 30px;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 54px;
+      background: rgba(30,30,30,0.93);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      z-index: 10000;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.35);
+    }
+
+    #toolbar h1 {
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .tb-sep {
+      width: 1px;
+      height: 26px;
+      background: rgba(255,255,255,0.18);
+      flex-shrink: 0;
+    }
+
+    /* Tab legend dots */
+    #tab-legend {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      flex-shrink: 1;
+    }
+
+    .legend-dot {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.75);
+      cursor: pointer;
+      padding: 3px 7px 3px 4px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .legend-dot:hover { background: rgba(255,255,255,0.1); }
+    .legend-dot.active {
+      border-color: rgba(255,255,255,0.55);
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+    }
+    .legend-dot .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    #clear-btn {
+      padding: 6px 13px;
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.85);
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 18px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #clear-btn:hover { background: rgba(220,50,50,0.45); }
+
+    #add-btn {
+      margin-left: auto;
+      padding: 7px 16px;
+      background: #fff;
+      color: #222;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #add-btn:hover  { background: #f0f0f0; transform: scale(1.03); }
+    #add-btn:active { transform: scale(0.97); }
+
+    /* ── Board ── */
+    #board {
+      position: absolute;
+      top: 54px; left: 0; right: 0; bottom: 0;
+    }
+
+    /* ── Note ── */
+    .note {
+      position: absolute;
+      width: 240px;
+      min-height: 200px;
+      border-radius: 5px;
+      box-shadow: 3px 6px 20px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      cursor: default;
+      transition: box-shadow 0.18s, transform 0.14s;
+      user-select: none;
+    }
+    .note:hover {
+      box-shadow: 6px 10px 28px rgba(0,0,0,0.24);
+      transform: translateY(-2px);
+    }
+    .note.dragging {
+      cursor: grabbing;
+      box-shadow: 12px 18px 44px rgba(0,0,0,0.32);
+      transform: rotate(1.5deg) scale(1.03);
+      z-index: 9999 !important;
+    }
+    .note.tab-hidden { display: none; }
+
+    /* Header — drag handle */
+    .note-header {
+      height: 34px;
+      border-radius: 5px 5px 0 0;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 5px;
+      flex-shrink: 0;
+      cursor: grab;
+    }
+    .note.dragging .note-header { cursor: grabbing; }
+
+    /* Tab dropdown inside header */
+    .note-tab-select {
+      font-size: 11px;
+      font-weight: 700;
+      border: none;
+      border-radius: 9px;
+      padding: 3px 18px 3px 7px;
+      cursor: pointer;
+      background: rgba(0,0,0,0.14);
+      color: rgba(0,0,0,0.68);
+      outline: none;
+      flex-shrink: 0;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(0,0,0,0.38)'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 5px center;
+      transition: background-color 0.12s;
+    }
+    .note-tab-select:hover { background-color: rgba(0,0,0,0.22); }
+
+    .header-spacer { flex: 1; }
+
+    .note-delete {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.14);
+      border: none;
+      color: rgba(0,0,0,0.48);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.13s;
+      flex-shrink: 0;
+    }
+    .note-delete:hover { background: rgba(200,30,30,0.42); color: #fff; }
+
+    /* Title */
+    .note-title {
+      width: 100%;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(0,0,0,0.72);
+      padding: 7px 12px 4px;
+      outline: none;
+      cursor: text;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+    }
+    .note-title::placeholder { color: rgba(0,0,0,0.24); font-weight: 400; }
+
+    /* Body */
+    .note-body {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.65;
+      color: rgba(0,0,0,0.75);
+      outline: none;
+      cursor: text;
+      min-height: 110px;
+    }
+    .note-body::placeholder { color: rgba(0,0,0,0.27); }
+
+    /* Footer */
+    .note-footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 3px 6px 4px 10px;
+      border-top: 1px solid rgba(0,0,0,0.06);
+    }
+    .note-date {
+      font-size: 10px;
+      color: rgba(0,0,0,0.33);
+      white-space: nowrap;
+    }
+    .note-resize {
+      cursor: se-resize;
+      color: rgba(0,0,0,0.18);
+      font-size: 12px;
+      line-height: 1;
+      padding: 2px 0 0 8px;
+    }
+
+    /* Empty hint */
+    #empty-hint {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: rgba(0,0,0,0.25);
+      pointer-events: none;
+    }
+    #empty-hint p     { font-size: 18px; margin-bottom: 8px; }
+    #empty-hint small { font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>付箋</h1>
+  <div class="tb-sep"></div>
+  <div id="tab-legend"><!-- JS が生成 --></div>
+  <div class="tb-sep"></div>
+  <button id="clear-btn">全て削除</button>
+  <button id="add-btn">+ 付箋を追加</button>
+</div>
+
+<div id="board">
+  <div id="empty-hint">
+    <p>付箋がありません</p>
+    <small>右上の「付箋を追加」ボタンで作成できます</small>
+  </div>
+</div>
+
+<script>
+  /* ── タブ定義（種別 → 色） ── */
+  const TABS = [
+    { key: '',          label: '未分類',   bg: '#f8f9fa', header: '#dee2e6', dot: '#adb5bd' },
+    { key: 'todo',      label: 'Todo',     bg: '#fff0f0', header: '#ffb3b3', dot: '#ef4444' },
+    { key: 'diary',     label: '日記',     bg: '#fffceb', header: '#fde68a', dot: '#f59e0b' },
+    { key: 'idea',      label: 'アイデア', bg: '#f8f0ff', header: '#d8b4fe', dot: '#a855f7' },
+    { key: 'knowledge', label: '知識',     bg: '#eff6ff', header: '#93c5fd', dot: '#3b82f6' },
+    { key: 'meeting',   label: '会議',     bg: '#f0fdf4', header: '#86efac', dot: '#22c55e' },
+    { key: 'shopping',  label: '買い物',   bg: '#fdf2f8', header: '#f9a8d4', dot: '#ec4899' },
+    { key: 'important', label: '重要',     bg: '#fff7ed', header: '#fb923c', dot: '#f97316' },
+  ];
+
+  const TAB_MAP = Object.fromEntries(TABS.map(t => [t.key, t]));
+
+  function tabInfo(key) { return TAB_MAP[key ?? ''] || TAB_MAP['']; }
+
+  /* ── State ── */
+  let notes = [];
+  let zCounter  = 100;
+  let filterKey = null; // null = 全て
+
+  const board = document.getElementById('board');
+  const hint  = document.getElementById('empty-hint');
+
+  /* ── Global drag / resize ── */
+  let drag   = null; // { el, noteId, ox, oy }
+  let resize = null; // { el, noteId, rox, rw0 }
+
+  document.addEventListener('mousemove', (e) => {
+    if (drag) {
+      const { el, noteId, ox, oy } = drag;
+      const bw = board.clientWidth, bh = board.clientHeight;
+      const nx = Math.max(0, Math.min(bw - el.offsetWidth,  e.clientX - ox));
+      const ny = Math.max(0, Math.min(bh - el.offsetHeight, e.clientY - oy - 54));
+      el.style.left = nx + 'px';
+      el.style.top  = ny + 'px';
+      const note = notes.find(n => n.id === noteId);
+      if (note) { note.x = nx; note.y = ny; }
+    }
+    if (resize) {
+      const { el, noteId, rox, rw0 } = resize;
+      const nw = Math.max(200, rw0 + (e.clientX - rox));
+      el.style.width = nw + 'px';
+      const note = notes.find(n => n.id === noteId);
+      if (note) note.w = nw;
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (drag)   { drag.el.classList.remove('dragging'); drag = null; saveNotes(); }
+    if (resize) { resize = null; saveNotes(); }
+  });
+
+  /* ── Persistence ── */
+  function saveNotes() {
+    localStorage.setItem('sticky-notes-v2', JSON.stringify(notes));
+  }
+
+  function loadNotes() {
+    try {
+      // v2 format
+      const raw = localStorage.getItem('sticky-notes-v2');
+      if (raw) { notes = JSON.parse(raw); return; }
+      // migrate v1
+      const old = localStorage.getItem('sticky-notes');
+      if (old) {
+        notes = JSON.parse(old).map(n => ({ ...n, tab: '', tags: undefined }));
+      }
+    } catch (_) { notes = []; }
+  }
+
+  /* ── Helpers ── */
+  function saveAndHint() { saveNotes(); updateHint(); }
+
+  function isHidden(note) {
+    return filterKey !== null && (note.tab || '') !== filterKey;
+  }
+
+  function updateHint() {
+    const visCount = notes.filter(n => !isHidden(n)).length;
+    if (notes.length === 0) {
+      hint.querySelector('p').textContent = '付箋がありません';
+      hint.style.display = 'block';
+    } else if (visCount === 0) {
+      hint.querySelector('p').textContent = 'このタブの付箋はありません';
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '新規';
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return `更新: ${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function touch(note) { note.updatedAt = Date.now(); }
+
+  function esc(s) {
+    return String(s ?? '')
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ── Toolbar legend ── */
+  const legend = document.getElementById('tab-legend');
+  TABS.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'legend-dot';
+    el.dataset.key = t.key;
+    el.innerHTML = `<span class="dot" style="background:${t.dot}"></span>${t.label}`;
+    el.addEventListener('click', () => setFilter(t.key));
+    legend.appendChild(el);
+  });
+
+  // "全て" virtual button at the start
+  const allBtn = document.createElement('div');
+  allBtn.className = 'legend-dot active';
+  allBtn.dataset.key = '__all__';
+  allBtn.innerHTML = `<span class="dot" style="background:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.4)"></span>全て`;
+  allBtn.addEventListener('click', () => setFilter(null));
+  legend.insertBefore(allBtn, legend.firstChild);
+
+  function setFilter(key) {
+    filterKey = key;
+    legend.querySelectorAll('.legend-dot').forEach(el => {
+      const k = el.dataset.key;
+      el.classList.toggle('active',
+        (key === null && k === '__all__') || (key !== null && k === key));
+    });
+    board.querySelectorAll('.note').forEach(el => {
+      const note = notes.find(n => n.id === el.dataset.id);
+      if (!note) return;
+      el.classList.toggle('tab-hidden', isHidden(note));
+    });
+    updateHint();
+  }
+
+  /* ── Create note element ── */
+  function createNoteEl(data) {
+    const info = tabInfo(data.tab);
+    const el = document.createElement('div');
+    el.className   = 'note';
+    el.dataset.id  = data.id;
+    el.style.left  = data.x + 'px';
+    el.style.top   = data.y + 'px';
+    el.style.width = (data.w || 240) + 'px';
+    el.style.zIndex = data.z || ++zCounter;
+    el.style.background = info.bg;
+    if (isHidden(data)) el.classList.add('tab-hidden');
+
+    const tabOptions = TABS.map(t =>
+      `<option value="${esc(t.key)}" ${t.key === (data.tab||'') ? 'selected' : ''}>${esc(t.label)}</option>`
+    ).join('');
+
+    el.innerHTML = `
+      <div class="note-header" style="background:${info.header}">
+        <select class="note-tab-select" title="タブを選択">${tabOptions}</select>
+        <div class="header-spacer"></div>
+        <button class="note-delete" title="削除">✕</button>
+      </div>
+      <input class="note-title" type="text"
+             placeholder="件名（タイトル）"
+             value="${esc(data.title || '')}">
+      <textarea class="note-body" placeholder="メモを入力…">${esc(data.text || '')}</textarea>
+      <div class="note-footer">
+        <span class="note-date">${formatDate(data.updatedAt)}</span>
+        <span class="note-resize" title="リサイズ">⇲</span>
+      </div>
+    `;
+
+    const header   = el.querySelector('.note-header');
+    const tabSel   = el.querySelector('.note-tab-select');
+    const titleEl  = el.querySelector('.note-title');
+    const bodyEl   = el.querySelector('.note-body');
+    const dateEl   = el.querySelector('.note-date');
+    const resizeEl = el.querySelector('.note-resize');
+    const delBtn   = el.querySelector('.note-delete');
+
+    function getNote() { return notes.find(n => n.id === data.id); }
+
+    function refreshDate() {
+      const n = getNote();
+      dateEl.textContent = n ? formatDate(n.updatedAt) : '';
+    }
+
+    /* Tab change → recolor note */
+    tabSel.addEventListener('change', () => {
+      const n = getNote(); if (!n) return;
+      n.tab = tabSel.value;
+      touch(n);
+      const i = tabInfo(n.tab);
+      el.style.background    = i.bg;
+      header.style.background = i.header;
+      el.classList.toggle('tab-hidden', isHidden(n));
+      refreshDate();
+      updateHint();
+      saveNotes();
+    });
+
+    /* Title */
+    titleEl.addEventListener('input', () => {
+      const n = getNote(); if (!n) return;
+      n.title = titleEl.value;
+      touch(n); refreshDate(); saveNotes();
+    });
+
+    /* Body */
+    bodyEl.addEventListener('input', () => {
+      const n = getNote(); if (!n) return;
+      n.text = bodyEl.value;
+      touch(n); refreshDate(); saveNotes();
+    });
+
+    /* Delete */
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      notes = notes.filter(n => n.id !== data.id);
+      el.remove();
+      saveAndHint();
+    });
+
+    /* Drag — start on header, skip select / delete */
+    header.addEventListener('mousedown', (e) => {
+      if (e.target === tabSel || e.target === delBtn) return;
+      if (e.target.tagName === 'OPTION') return;
+      drag = {
+        el, noteId: data.id,
+        ox: e.clientX - el.offsetLeft,
+        oy: e.clientY - (el.offsetTop + 54),
+      };
+      el.classList.add('dragging');
+      el.style.zIndex = ++zCounter;
+      const n = getNote(); if (n) n.z = zCounter;
+      e.preventDefault();
+    });
+
+    /* Resize */
+    resizeEl.addEventListener('mousedown', (e) => {
+      resize = { el, noteId: data.id, rox: e.clientX, rw0: el.offsetWidth };
+      e.stopPropagation();
+      e.preventDefault();
+    });
+
+    /* Bring to front on click */
+    el.addEventListener('mousedown', () => {
+      el.style.zIndex = ++zCounter;
+      const n = getNote(); if (n) n.z = zCounter;
+    });
+
+    board.appendChild(el);
+  }
+
+  /* ── Add note ── */
+  function addNote() {
+    const bw = board.clientWidth  || window.innerWidth;
+    const bh = board.clientHeight || (window.innerHeight - 54);
+    const data = {
+      id:        Date.now().toString(),
+      tab:       filterKey ?? '',
+      title:     '',
+      text:      '',
+      updatedAt: null,
+      x: 20 + Math.floor(Math.random() * Math.max(20, bw - 260)),
+      y: 20 + Math.floor(Math.random() * Math.max(20, bh - 230)),
+      w: 240,
+      z: ++zCounter,
+    };
+    notes.push(data);
+    createNoteEl(data);
+    saveAndHint();
+    board.querySelector(`[data-id="${data.id}"] .note-title`)?.focus();
+  }
+
+  /* ── Toolbar events ── */
+  document.getElementById('add-btn').addEventListener('click', addNote);
+
+  document.getElementById('clear-btn').addEventListener('click', () => {
+    if (notes.length === 0) return;
+    const msg = filterKey !== null
+      ? `「${tabInfo(filterKey).label}」の付箋を全て削除しますか？`
+      : '全ての付箋を削除しますか？';
+    if (!confirm(msg)) return;
+    if (filterKey !== null) {
+      const toDelete = new Set(notes.filter(n => (n.tab||'') === filterKey).map(n => n.id));
+      notes = notes.filter(n => !toDelete.has(n.id));
+      toDelete.forEach(id => board.querySelector(`[data-id="${id}"]`)?.remove());
+    } else {
+      notes = [];
+      board.querySelectorAll('.note').forEach(el => el.remove());
+    }
+    saveAndHint();
+  });
+
+  board.addEventListener('dblclick', (e) => {
+    if (e.target !== board && e.target !== hint) return;
+    addNote();
+  });
+
+  /* ── Init ── */
+  loadNotes();
+  notes.forEach(n => {
+    if (!('tab' in n)) n.tab = '';
+    if (n.z && n.z > zCounter) zCounter = n.z;
+    createNoteEl(n);
+  });
+  updateHint();
+</script>
+</body>
+</html>
