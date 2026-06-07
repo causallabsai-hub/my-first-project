@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { type CSSProperties, useEffect, useRef, useState } from "react"
 
 // =========================================================
 // type: タスクの型定義
 // =========================================================
-// DESIGN: タスクの形を明確にして、後から機能追加しても壊れにくくする
 type Priority = "高" | "中" | "低"
 type TaskStatus = "todo" | "doing" | "done"
 
@@ -22,7 +21,7 @@ type Task = {
 // =========================================================
 // helper: localStorage読み込み
 // =========================================================
-// FIX: JSONが壊れていてもアプリが止まらないようにtry/catchを入れる
+// NOTE: localStorageはブラウザ専用なので、window確認を入れる
 const loadTasks = (key: string): Task[] => {
   if (typeof window === "undefined") return []
 
@@ -53,17 +52,17 @@ export default function App() {
   // =========================================================
   // state: tasks
   // =========================================================
-  // FIX: Hydrationエラー対策
-  // NOTE: 初期値でlocalStorageを読まず、useEffectで後から読む
+  // FIX: Hydration対策
+  // NOTE: 初回は空配列にして、画面表示後にlocalStorageから読み込む
   const [todoTasks, setTodoTasks] = useState<Task[]>([])
   const [doingTasks, setDoingTasks] = useState<Task[]>([])
   const [doneTasks, setDoneTasks] = useState<Task[]>([])
 
   // =========================================================
-  // state: mounted
+  // ref: localStorage制御
   // =========================================================
   // FIX: localStorage読み込み前に空配列で上書き保存されるのを防ぐ
-  const [mounted, setMounted] = useState(false)
+  const hasLoadedStorageRef = useRef(false)
 
   // =========================================================
   // state: responsive
@@ -92,28 +91,28 @@ export default function App() {
   } | null>(null)
 
   // =========================================================
-  // style: color palette（落ち着いた柔らかい色）
+  // style: color palette
   // =========================================================
-  // DESIGN: 添付画像の色味を参考に、仕事でも使いやすい上品な配色に調整
   const palette = {
     beige: "#D8C09C",
     sage: "#A6B58E",
-    olive: "#94A956",
     blue: "#9FCED1",
     cream: "#EDE2BB",
-    pink: "#E6CADA",
 
     white: "#FFFFFF",
     bg: "#FAF8F3",
     text: "#4B4742",
     subText: "#6F6860",
     border: "#D8D1C7",
+
+    // NEW: 期限切れ用の赤
+    overdueRed: "#df1526",
   }
 
   // =========================================================
   // style: input
   // =========================================================
-  const inputStyle = {
+  const inputStyle: CSSProperties = {
     padding: 10,
     border: `1px solid ${palette.border}`,
     borderRadius: 10,
@@ -121,13 +120,13 @@ export default function App() {
     color: palette.text,
     marginRight: isMobile ? 0 : 8,
     outline: "none",
-    boxSizing: "border-box" as const,
+    boxSizing: "border-box",
   }
 
   // =========================================================
   // style: buttons
   // =========================================================
-  const csvButtonStyle = {
+  const csvButtonStyle: CSSProperties = {
     padding: "10px 16px",
     border: `1px solid ${palette.blue}`,
     borderRadius: 10,
@@ -138,7 +137,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const addButtonStyle = {
+  const addButtonStyle: CSSProperties = {
     padding: "10px 16px",
     border: `1px solid ${palette.beige}`,
     borderRadius: 10,
@@ -149,7 +148,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const startButtonStyle = {
+  const startButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: `1px solid ${palette.sage}`,
     borderRadius: 10,
@@ -161,7 +160,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const editButtonStyle = {
+  const editButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: `1px solid ${palette.blue}`,
     borderRadius: 10,
@@ -173,7 +172,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const deleteButtonStyle = {
+  const deleteButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: "1px solid #D69AA8",
     borderRadius: 10,
@@ -185,7 +184,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const saveButtonStyle = {
+  const saveButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: `1px solid ${palette.sage}`,
     borderRadius: 10,
@@ -197,7 +196,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const cancelButtonStyle = {
+  const cancelButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: `1px solid ${palette.border}`,
     borderRadius: 10,
@@ -209,7 +208,7 @@ export default function App() {
     fontWeight: "bold",
   }
 
-  const calendarButtonStyle = {
+  const calendarButtonStyle: CSSProperties = {
     padding: "10px 14px",
     border: `1px solid ${palette.blue}`,
     borderRadius: 10,
@@ -224,7 +223,7 @@ export default function App() {
   // =========================================================
   // style: column
   // =========================================================
-  const getColumnStyle = (status: TaskStatus) => {
+  const getColumnStyle = (status: TaskStatus): CSSProperties => {
     if (status === "todo") {
       return {
         background: "#F3E9DB",
@@ -254,23 +253,23 @@ export default function App() {
     return new Date(value).toLocaleString("ja-JP")
   }
 
-// =========================================================
-// helper: 期限切れ判定
-// =========================================================
-// NEW: 今日より前の期限日なら期限切れとして扱う
-// NOTE: 期限日が未設定の場合は期限切れにしない
-const isOverdue = (dueDate: string) => {
-  if (!dueDate) return false
+  // =========================================================
+  // helper: 期限切れ判定
+  // =========================================================
+  // NEW: 今日より前の期限日なら期限切れとして扱う
+  // NOTE: 期限日が未設定の場合は期限切れにしない
+  const isOverdue = (taskDueDate: string) => {
+    if (!taskDueDate) return false
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
 
-  // FIX: YYYY-MM-DD をローカル日付として安全に扱う
-  const due = new Date(`${dueDate}T00:00:00`)
-  due.setHours(0, 0, 0, 0)
+    // FIX: YYYY-MM-DD をローカル日付として扱う
+    const due = new Date(`${taskDueDate}T00:00:00`)
+    due.setHours(0, 0, 0, 0)
 
-  return due < today
-}
+    return due < today
+  }
 
   // =========================================================
   // helper: 全タスクをstatus付きでまとめる
@@ -286,7 +285,6 @@ const isOverdue = (dueDate: string) => {
   // =========================================================
   // helper: 検索フィルター
   // =========================================================
-  // DESIGN: タイトル・詳細を対象に検索する
   const filterTasks = (tasks: Task[]) => {
     const text = searchText.toLowerCase().trim()
 
@@ -349,7 +347,6 @@ const isOverdue = (dueDate: string) => {
   // =========================================================
   // logic: タスク移動
   // =========================================================
-  // DESIGN: ボタン移動とドラッグ&ドロップ移動で共通利用する
   const moveTask = (
     taskItem: Task,
     fromStatus: TaskStatus,
@@ -480,7 +477,6 @@ const isOverdue = (dueDate: string) => {
   // =========================================================
   // helper: CSVエスケープ
   // =========================================================
-  // FIX: カンマ・改行・ダブルクォートでCSVが壊れる問題を防ぐ
   const escapeCSV = (value: string | number) => {
     const text = String(value ?? "")
     const escaped = text.replace(/"/g, '""')
@@ -531,7 +527,6 @@ const isOverdue = (dueDate: string) => {
       ...rows.map((row) => row.map(escapeCSV).join(",")),
     ].join("\n")
 
-    // FIX: BOMを付けてExcelの日本語文字化けを減らす
     const bom = "\uFEFF"
 
     const blob = new Blob([bom + csvContent], {
@@ -551,7 +546,7 @@ const isOverdue = (dueDate: string) => {
   // =========================================================
   // logic: Googleカレンダー共有
   // =========================================================
-  // NOTE: Google APIの直接登録ではなく、Googleカレンダー作成画面を開く安全な方式
+  // NOTE: Google API直接登録ではなく、予定作成画面を開く安全寄りの方式
   const shareToGoogleCalendar = (taskItem: Task) => {
     if (!taskItem.dueDate) {
       alert("Googleカレンダーに共有するには期限日を設定してください。")
@@ -593,23 +588,33 @@ const isOverdue = (dueDate: string) => {
   // =========================================================
   // persistence: localStorage読み込み
   // =========================================================
+  // FIX: setStateをuseEffect直下で同期実行しない
+  // NOTE: React Hooks lint対策としてsetTimeout内で読み込む
   useEffect(() => {
-    setTodoTasks(loadTasks("todoTasks"))
-    setDoingTasks(loadTasks("doingTasks"))
-    setDoneTasks(loadTasks("doneTasks"))
-    setMounted(true)
+    const timer = window.setTimeout(() => {
+      setTodoTasks(loadTasks("todoTasks"))
+      setDoingTasks(loadTasks("doingTasks"))
+      setDoneTasks(loadTasks("doneTasks"))
+
+      hasLoadedStorageRef.current = true
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [])
 
   // =========================================================
   // persistence: localStorage保存
   // =========================================================
+  // FIX: localStorage読み込みが終わるまで保存しない
   useEffect(() => {
-    if (!mounted) return
+    if (!hasLoadedStorageRef.current) return
 
     localStorage.setItem("todoTasks", JSON.stringify(todoTasks))
     localStorage.setItem("doingTasks", JSON.stringify(doingTasks))
     localStorage.setItem("doneTasks", JSON.stringify(doneTasks))
-  }, [mounted, todoTasks, doingTasks, doneTasks])
+  }, [todoTasks, doingTasks, doneTasks])
 
   // =========================================================
   // responsive: 画面幅の監視
@@ -632,10 +637,10 @@ const isOverdue = (dueDate: string) => {
   // ui: task card
   // =========================================================
   const renderTaskCard = (item: Task, status: TaskStatus) => {
-  const isEditing = editingTask?.task.id === item.id
+    const isEditing = editingTask?.task.id === item.id
 
-  // NEW: 完了済み以外で、期限日が今日より前なら期限切れ
-  const overdue = status !== "done" && isOverdue(item.dueDate)
+    // NEW: 完了済み以外で、期限日が今日より前なら期限切れ
+    const overdue = status !== "done" && isOverdue(item.dueDate)
 
     return (
       <div
@@ -643,25 +648,25 @@ const isOverdue = (dueDate: string) => {
         draggable={!isEditing}
         onDragStart={() => setDraggingTask({ task: item, status })}
         style={{
-  border: `1px solid ${palette.border}`,
-  borderRadius: 16,
-  padding: 16,
-  marginBottom: 14,
-  background: palette.white,
-  color: palette.text,
-  cursor: isEditing ? "default" : "grab",
-  boxShadow: "0 3px 10px rgba(120, 110, 100, 0.08)",
-  boxSizing: "border-box",
+          border: `1px solid ${palette.border}`,
+          borderRadius: 16,
+          padding: 16,
+          marginBottom: 14,
+          background: palette.white,
+          color: palette.text,
+          cursor: isEditing ? "default" : "grab",
+          boxShadow: "0 3px 10px rgba(120, 110, 100, 0.08)",
+          boxSizing: "border-box",
 
-  // NEW: 期限切れタスクは背景と枠線を変更
-  ...(overdue
-    ? {
-        background: "#FFF1F3",
-        border: "1px solid #D98B9A",
-        boxShadow: "0 3px 10px rgba(160, 80, 90, 0.14)",
-      }
-    : {}),
-}}
+          // NEW: 期限切れカードの背景と枠線
+          ...(overdue
+            ? {
+                background: "#FFF1F3",
+                border: `1px solid ${palette.overdueRed}`,
+                boxShadow: "0 3px 10px rgba(223, 21, 38, 0.16)",
+              }
+            : {}),
+        }}
       >
         {isEditing ? (
           <>
@@ -743,16 +748,16 @@ const isOverdue = (dueDate: string) => {
               {item.description || "詳細なし"}
             </p>
 
-           <p
-            style={{
-    margin: "4px 0",
-    color: overdue ? "#df1526" : palette.subText,
-    fontWeight: overdue ? "bold" : "normal",
-  }}
->
-  期限: {item.dueDate || "未設定"}
-  {overdue && "（期限切れ）"}
-</p>
+            <p
+              style={{
+                margin: "4px 0",
+                color: overdue ? palette.overdueRed : palette.subText,
+                fontWeight: overdue ? "bold" : "normal",
+              }}
+            >
+              期限: {item.dueDate || "未設定"}
+              {overdue && "（期限切れ）"}
+            </p>
 
             <p style={{ margin: "4px 0 12px", color: palette.subText }}>
               優先度: {item.priority}
