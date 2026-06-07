@@ -254,6 +254,24 @@ export default function App() {
     return new Date(value).toLocaleString("ja-JP")
   }
 
+// =========================================================
+// helper: 期限切れ判定
+// =========================================================
+// NEW: 今日より前の期限日なら期限切れとして扱う
+// NOTE: 期限日が未設定の場合は期限切れにしない
+const isOverdue = (dueDate: string) => {
+  if (!dueDate) return false
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  // FIX: YYYY-MM-DD をローカル日付として安全に扱う
+  const due = new Date(`${dueDate}T00:00:00`)
+  due.setHours(0, 0, 0, 0)
+
+  return due < today
+}
+
   // =========================================================
   // helper: 全タスクをstatus付きでまとめる
   // =========================================================
@@ -614,7 +632,10 @@ export default function App() {
   // ui: task card
   // =========================================================
   const renderTaskCard = (item: Task, status: TaskStatus) => {
-    const isEditing = editingTask?.task.id === item.id
+  const isEditing = editingTask?.task.id === item.id
+
+  // NEW: 完了済み以外で、期限日が今日より前なら期限切れ
+  const overdue = status !== "done" && isOverdue(item.dueDate)
 
     return (
       <div
@@ -622,16 +643,25 @@ export default function App() {
         draggable={!isEditing}
         onDragStart={() => setDraggingTask({ task: item, status })}
         style={{
-          border: `1px solid ${palette.border}`,
-          borderRadius: 16,
-          padding: 16,
-          marginBottom: 14,
-          background: palette.white,
-          color: palette.text,
-          cursor: isEditing ? "default" : "grab",
-          boxShadow: "0 3px 10px rgba(120, 110, 100, 0.08)",
-          boxSizing: "border-box",
-        }}
+  border: `1px solid ${palette.border}`,
+  borderRadius: 16,
+  padding: 16,
+  marginBottom: 14,
+  background: palette.white,
+  color: palette.text,
+  cursor: isEditing ? "default" : "grab",
+  boxShadow: "0 3px 10px rgba(120, 110, 100, 0.08)",
+  boxSizing: "border-box",
+
+  // NEW: 期限切れタスクは背景と枠線を変更
+  ...(overdue
+    ? {
+        background: "#FFF1F3",
+        border: "1px solid #D98B9A",
+        boxShadow: "0 3px 10px rgba(160, 80, 90, 0.14)",
+      }
+    : {}),
+}}
       >
         {isEditing ? (
           <>
@@ -713,9 +743,16 @@ export default function App() {
               {item.description || "詳細なし"}
             </p>
 
-            <p style={{ margin: "4px 0", color: palette.subText }}>
-              期限: {item.dueDate || "未設定"}
-            </p>
+           <p
+            style={{
+    margin: "4px 0",
+    color: overdue ? "#df1526" : palette.subText,
+    fontWeight: overdue ? "bold" : "normal",
+  }}
+>
+  期限: {item.dueDate || "未設定"}
+  {overdue && "（期限切れ）"}
+</p>
 
             <p style={{ margin: "4px 0 12px", color: palette.subText }}>
               優先度: {item.priority}
